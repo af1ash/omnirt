@@ -1080,13 +1080,19 @@ class AvatarRuntimeRouter:
         wav2lip: Wav2LipRealtimeRuntime | None = None,
         quicktalk: Any | None = None,
         fasterliveportrait: Any | None = None,
+        feathertalk: Any | None = None,
     ) -> None:
+        self.feathertalk = feathertalk
         self.fallback = fallback
         self.wav2lip = wav2lip
         self.quicktalk = quicktalk
         self.fasterliveportrait = fasterliveportrait
 
     def render_chunk(self, session: RealtimeAvatarSession, pcm_s16le: bytes) -> bytes:
+        if session.model == "feathertalk":
+            if self.feathertalk is None:
+                raise Wav2LipRuntimeError("FeatherTalk runtime is not enabled")
+            return self.feathertalk.render_chunk(session, pcm_s16le)
         if session.model == "wav2lip" and self.wav2lip is not None:
             return self.wav2lip.render_chunk(session, pcm_s16le)
         if session.model == "quicktalk" and self.quicktalk is not None:
@@ -1106,6 +1112,10 @@ class AvatarRuntimeRouter:
         raise Wav2LipRuntimeError(f"Video clone is not supported for model: {session.model}")
 
     def preload_reference(self, session: RealtimeAvatarSession) -> dict[str, object]:
+        if session.model == "feathertalk":
+            if self.feathertalk is None:
+                raise Wav2LipRuntimeError("FeatherTalk runtime is not enabled")
+            return self.feathertalk.preload_reference(session)
         if session.model == "fasterliveportrait" and self.fasterliveportrait is not None:
             preload = getattr(self.fasterliveportrait, "preload_reference", None)
             if callable(preload):
@@ -1118,7 +1128,19 @@ class AvatarRuntimeRouter:
             raise Wav2LipRuntimeError(f"Preload is not supported for model: {session.model}")
         return self.wav2lip.preload_reference(session)
 
+    def render_idle(self, session, frame_index):
+        if session.model != "feathertalk" or self.feathertalk is None:
+            raise Wav2LipRuntimeError("Idle frames are only supported by FeatherTalk")
+        return self.feathertalk.render_idle(session, frame_index)
+
+    def set_audio_context(self, session, pcm, reset=False):
+        if session.model != "feathertalk" or self.feathertalk is None:
+            raise Wav2LipRuntimeError("Audio context is only supported by FeatherTalk")
+        self.feathertalk.set_audio_context(session, pcm, reset)
+
     def close_session(self, session_id: str) -> None:
+        if self.feathertalk is not None:
+            self.feathertalk.close_session(session_id)
         if self.wav2lip is not None:
             self.wav2lip.close_session(session_id)
         if self.quicktalk is not None:

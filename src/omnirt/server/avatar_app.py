@@ -18,7 +18,7 @@ def _allowed_frame_roots_from_env() -> list[str]:
 
 def _avatar_model_ws_urls_from_env() -> dict[str, str]:
     mapping: dict[str, str] = {}
-    for model in ("flashtalk", "wav2lip", "quicktalk", "musetalk", "flashhead", "fasterliveportrait"):
+    for model in ("flashtalk", "wav2lip", "quicktalk", "musetalk", "flashhead", "fasterliveportrait", "feathertalk"):
         raw = os.environ.get(f"OMNIRT_AVATAR_{model.upper()}_WS_URL", "").strip()
         if raw:
             mapping[model] = raw
@@ -72,10 +72,11 @@ def _validate_quicktalk_startup_preload_path(config: dict[str, object], allowed_
 def create_avatar_app(*, default_backend: str = "auto") -> FastAPI:
     app = FastAPI(title="OmniRT Avatar", version="1.0.0")
     runtime = FakeRealtimeAvatarRuntime()
+    feathertalk_enabled = _runtime_enabled("OMNIRT_FEATHERTALK_RUNTIME")
     wav2lip_enabled = _runtime_enabled("OMNIRT_WAV2LIP_RUNTIME")
     quicktalk_enabled = _runtime_enabled("OMNIRT_QUICKTALK_RUNTIME")
     fasterliveportrait_enabled = _runtime_enabled("OMNIRT_FASTLIVEPORTRAIT_RUNTIME")
-    if wav2lip_enabled or quicktalk_enabled or fasterliveportrait_enabled:
+    if wav2lip_enabled or quicktalk_enabled or fasterliveportrait_enabled or feathertalk_enabled:
         from omnirt.models.wav2lip.runtime import AvatarRuntimeRouter, Wav2LipRealtimeRuntime
 
         quicktalk_runtime = None
@@ -89,10 +90,15 @@ def create_avatar_app(*, default_backend: str = "auto") -> FastAPI:
             from omnirt.models.fasterliveportrait.runtime import FasterLivePortraitRealtimeRuntime
 
             fasterliveportrait_runtime = FasterLivePortraitRealtimeRuntime(load_models=True)
+        feathertalk_runtime = None
+        if feathertalk_enabled:
+            from omnirt.models.feathertalk.runtime import FeatherTalkRealtimeRuntime
+            feathertalk_runtime = FeatherTalkRealtimeRuntime()
         runtime = AvatarRuntimeRouter(
             fallback=runtime,
             wav2lip=Wav2LipRealtimeRuntime() if wav2lip_enabled else None,
             quicktalk=quicktalk_runtime,
+            feathertalk=feathertalk_runtime,
             fasterliveportrait=fasterliveportrait_runtime,
         )
     app.state.default_backend = default_backend

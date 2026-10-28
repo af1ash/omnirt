@@ -278,6 +278,7 @@ async def list_audio2video_models(request: Request) -> dict[str, object]:
     runtime_kind = str(getattr(runtime, "runtime_kind", "") or "")
     wav2lip_connected = bool(getattr(runtime, "wav2lip", None))
     quicktalk_connected = bool(getattr(runtime, "quicktalk", None))
+    feathertalk_connected = bool(getattr(runtime, "feathertalk", None))
     fasterliveportrait_connected = bool(getattr(runtime, "fasterliveportrait", None))
     proxy_urls = _avatar_model_ws_urls(request)
     flashtalk_proxy = proxy_urls.get("flashtalk")
@@ -307,6 +308,8 @@ async def list_audio2video_models(request: Request) -> dict[str, object]:
     if fasterliveportrait_proxy:
         fasterliveportrait_connected = await _is_ws_url_reachable(fasterliveportrait_proxy)
     statuses = [
+        {"id": "feathertalk", "connected": feathertalk_connected,
+         "reason": "feathertalk_runtime" if feathertalk_connected else "runtime_not_enabled"},
         {
             "id": "flashtalk",
             "connected": flashtalk_connected,
@@ -440,6 +443,8 @@ async def _flashtalk_compatible_loop(websocket: WebSocket, *, model: str) -> Non
                     preload_result: dict[str, object] | None = None
                     session = None
                     try:
+                        if model == "feathertalk" and getattr(service.runtime, "feathertalk", None) is None:
+                            raise RealtimeAvatarError("runtime_not_enabled", "Enable OMNIRT_FEATHERTALK_RUNTIME=1")
                         config = {
                             "seed": int(payload.get("seed", 9999)),
                             **dict(websocket.app.state.default_request_config),
@@ -463,6 +468,11 @@ async def _flashtalk_compatible_loop(websocket: WebSocket, *, model: str) -> Non
                                     "mouth_metadata": payload.get("mouth_metadata") or {},
                                 }
                             )
+                        elif model == "feathertalk":
+                            for key in ("dataset", "checkpoint", "hubert_checkpoint"):
+                                name = f"feathertalk_{key}"
+                                if payload.get(name):
+                                    config[name] = payload[name]
                         elif model == "quicktalk":
                             config.update(_quicktalk_config_from_payload(payload))
                         elif model == FASTERLIVEPORTRAIT_MODEL_ID:
@@ -475,7 +485,7 @@ async def _flashtalk_compatible_loop(websocket: WebSocket, *, model: str) -> Non
                             config=config,
                         )
                         session_id = session.session_id
-                        if model in {"quicktalk", FASTERLIVEPORTRAIT_MODEL_ID}:
+                        if model in {"quicktalk", "feathertalk", FASTERLIVEPORTRAIT_MODEL_ID}:
                             preload_result = await _preload_existing_session_async(websocket, service, session.session_id)
                     except RealtimeAvatarError as exc:
                         if session_id is not None:
@@ -508,6 +518,30 @@ async def _flashtalk_compatible_loop(websocket: WebSocket, *, model: str) -> Non
                             "preload": preload_result,
                         }
                     )
+                elif msg_type == "idle" and model == "feathertalk":
+                    try:
+                        if session_id is None:
+                            raise ValueError("No active session")
+                        session = service._get_session(session_id)
+                        video = await asyncio.to_thread(service.runtime.render_idle, session, max(0, int(payload.get("frame_index", 0))))
+                        await websocket.send_bytes(video)
+                    except Exception as exc:
+                        await websocket.send_json(_runtime_error_payload(exc))
+                elif msg_type == "audio_context" and model == "feathertalk":
+                    try:
+                        if session_id is None:
+                            raise ValueError("No active session")
+                        raw = str(payload.get("pcm_s16le") or "")
+                        if len(raw) > 18000:
+                            raise ValueError("Audio lookahead exceeds 400ms")
+                        pcm = base64.b64decode(raw, validate=True)
+                        if len(pcm) > 12800 or len(pcm) % 2:
+                            raise ValueError("Invalid lookahead PCM length")
+                        session = service._get_session(session_id)
+                        await asyncio.to_thread(service.runtime.set_audio_context, session, pcm, bool(payload.get("reset")))
+                        await websocket.send_json({"type": "audio_context_ok"})
+                    except Exception as exc:
+                        await websocket.send_json(_runtime_error_payload(exc))
                 elif msg_type == "close":
                     if session_id is not None:
                         service.close_session(session_id)
@@ -685,6 +719,21 @@ async def _fasterliveportrait_video_clone_loop(websocket: WebSocket) -> None:
                             "runtime_config": dict(session.runtime_config),
                         }
                     )
+                elif msg_type == "audio_context" and model == "feathertalk":
+                    try:
+                        if session_id is None:
+                            raise ValueError("No active session")
+                        raw = str(payload.get("pcm_s16le") or "")
+                        if len(raw) > 18000:
+                            raise ValueError("Audio lookahead exceeds 400ms")
+                        pcm = base64.b64decode(raw, validate=True)
+                        if len(pcm) > 12800 or len(pcm) % 2:
+                            raise ValueError("Invalid lookahead PCM length")
+                        session = service._get_session(session_id)
+                        await asyncio.to_thread(service.runtime.set_audio_context, session, pcm, bool(payload.get("reset")))
+                        await websocket.send_json({"type": "audio_context_ok"})
+                    except Exception as exc:
+                        await websocket.send_json(_runtime_error_payload(exc))
                 elif msg_type == "close":
                     if session_id is not None:
                         service.close_session(session_id)
@@ -860,3 +909,9 @@ async def native_realtime_avatar(websocket: WebSocket):
     finally:
         if session_id is not None:
             service.close_session(session_id)
+
+
+@router.websocket("/v1/audio2video/feathertalk")
+@router.websocket("/v1/avatar/feathertalk")
+async def feathertalk_compatible_avatar(websocket: WebSocket):
+    await _flashtalk_compatible_loop(websocket, model="feathertalk")

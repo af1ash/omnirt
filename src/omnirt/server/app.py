@@ -34,7 +34,7 @@ def _allowed_frame_roots_from_env() -> list[str]:
 
 def _avatar_model_ws_urls_from_env() -> dict[str, str]:
     mapping: dict[str, str] = {}
-    for model in ("flashtalk", "wav2lip", "quicktalk", "musetalk", "flashhead", "fasterliveportrait"):
+    for model in ("flashtalk", "wav2lip", "quicktalk", "musetalk", "flashhead", "fasterliveportrait", "feathertalk"):
         raw = os.environ.get(f"OMNIRT_AVATAR_{model.upper()}_WS_URL", "").strip()
         if raw:
             mapping[model] = raw
@@ -95,10 +95,11 @@ def _create_realtime_avatar_service(
     if runtime_mode == "proxy":
         return RealtimeAvatarService(allowed_frame_roots=allowed_frame_roots)
 
+    feathertalk_enabled = _runtime_enabled("OMNIRT_FEATHERTALK_RUNTIME")
     wav2lip_enabled = _runtime_enabled("OMNIRT_WAV2LIP_RUNTIME")
     quicktalk_enabled = _runtime_enabled("OMNIRT_QUICKTALK_RUNTIME")
     fasterliveportrait_enabled = _runtime_enabled("OMNIRT_FASTLIVEPORTRAIT_RUNTIME")
-    if not wav2lip_enabled and not quicktalk_enabled and not fasterliveportrait_enabled:
+    if not wav2lip_enabled and not quicktalk_enabled and not fasterliveportrait_enabled and not feathertalk_enabled:
         return RealtimeAvatarService(allowed_frame_roots=allowed_frame_roots)
 
     from omnirt.models.wav2lip.runtime import AvatarRuntimeRouter, Wav2LipRealtimeRuntime
@@ -115,11 +116,16 @@ def _create_realtime_avatar_service(
 
         fasterliveportrait_runtime = FasterLivePortraitRealtimeRuntime(load_models=True)
 
+    feathertalk_runtime = None
+    if feathertalk_enabled:
+        from omnirt.models.feathertalk.runtime import FeatherTalkRealtimeRuntime
+        feathertalk_runtime = FeatherTalkRealtimeRuntime()
     service = RealtimeAvatarService(
         runtime=AvatarRuntimeRouter(
             fallback=FakeRealtimeAvatarRuntime(),
             wav2lip=Wav2LipRealtimeRuntime() if wav2lip_enabled else None,
             quicktalk=quicktalk_runtime,
+            feathertalk=feathertalk_runtime,
             fasterliveportrait=fasterliveportrait_runtime,
         ),
         allowed_frame_roots=allowed_frame_roots,

@@ -504,6 +504,17 @@ class RealtimeAvatarService:
                 must_be_dir=False,
             )
             quicktalk_face_cache_str = str(quicktalk_face_cache_path)
+        if model == "feathertalk":
+            for key in ("dataset", "checkpoint", "hubert_checkpoint"):
+                name = f"feathertalk_{key}"
+                if config.get(name):
+                    config[name] = str(self._validate_allowed_frame_path(
+                        str(config[name]), code="bad_feathertalk_path", label=name,
+                        must_be_dir=key == "dataset",
+                    ))
+            if int(config.get("sample_rate", 16000)) != 16000 or int(config.get("channels", 1)) != 1:
+                raise RealtimeAvatarError("bad_feathertalk_audio", "FeatherTalk requires 16kHz mono PCM")
+            config.update(fps=25, slice_len=1, chunk_samples=640, emit_frames_per_chunk=1)
         sample_rate = int(config.get("sample_rate", 16000))
         requested_fps = int(config.get("fps", 25))
         default_slice_len = 28
@@ -545,6 +556,7 @@ class RealtimeAvatarService:
                 "preprocessed frame references require ref_frame_metadata_path.",
             )
         runtime_config_keys = {
+            "feathertalk_dataset", "feathertalk_checkpoint", "feathertalk_hubert_checkpoint",
             "cfg_scale",
             "cfg_cond",
             "flag_stitching",
