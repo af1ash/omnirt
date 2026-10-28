@@ -514,7 +514,7 @@ class RealtimeAvatarService:
                     ))
             if int(config.get("sample_rate", 16000)) != 16000 or int(config.get("channels", 1)) != 1:
                 raise RealtimeAvatarError("bad_feathertalk_audio", "FeatherTalk requires 16kHz mono PCM")
-            config.update(fps=25, slice_len=1, chunk_samples=640, emit_frames_per_chunk=1)
+            config.update(fps=25, slice_len=1, chunk_samples=320*1000, emit_frames_per_chunk=1)
         sample_rate = int(config.get("sample_rate", 16000))
         requested_fps = int(config.get("fps", 25))
         default_slice_len = 28
