@@ -156,7 +156,21 @@ class FeatherTalkEngine:
         pcm = self._pcm(audio_chunk)
         return self._features(pcm, self._hubert, 0, (len(pcm) + 639) // 640)
 
-    def extract_features_for_stream(self, audio_chunk: AudioChunk, avatar_state: FeatherTalkState) -> FeatherTalkFeatures:
+    def extract_features_for_stream(
+        self, audio_chunk: AudioChunk, avatar_state: FeatherTalkState,
+    ) -> FeatherTalkFeatures:
+        """Extract only the supplied chunk, without history or lookahead.
+
+        Keep the existing [frames, 40, 1024] feature layout and boundary zero
+        padding. This variant does not read or update avatar_state.extra.
+        A 640-sample chunk yields one HuBERT token, discarded by the existing
+        even-token pairing rule, so its returned feature window is all zeros.
+        """
+        pcm = self._pcm(audio_chunk)
+        count = (len(pcm) + 639) // 640
+        return self._features(pcm, avatar_state.hubert, 0, count)
+
+    def extract_features_for_stream1(self, audio_chunk: AudioChunk, avatar_state: FeatherTalkState) -> FeatherTalkFeatures:
         pcm = self._pcm(audio_chunk)
         extra = avatar_state.extra
         previous = np.asarray(extra.get("audio_context_pcm", np.empty(0)), dtype=np.float32)
