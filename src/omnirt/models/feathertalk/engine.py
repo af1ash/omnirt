@@ -14,6 +14,8 @@ import numpy as np
 
 from types import SimpleNamespace
 
+from .face_utils import reshape_audio_feat, gather_audio_window
+
 @dataclass
 class AudioChunk:
     data: np.ndarray
@@ -141,14 +143,14 @@ class FeatherTalkEngine:
         # Pad feature frames only; synthetic waveform samples distort normalization.
         hidden = get_feather_hubert_from_16k_speech(pcm, hubert, device=torch.device(self._device))
         features = make_even_first_dim(hidden).numpy().reshape(-1, 2, 1024)
-        missing = start + count - len(features)
-        if missing > 0:
-            features = np.pad(features, ((0, missing), (0, 0), (0, 0)))
-        vector = np.stack([
-            reshape_audio_feat(gather_audio_window(features, i)).numpy()
-            for i in range(start, start + count)
-        ])
-        return FeatherTalkFeatures(vector, count)
+        # missing = start + count - len(features)
+        # if missing > 0:
+        #     features = np.pad(features, ((0, missing), (0, 0), (0, 0)))
+        # vector = np.stack([
+        #     reshape_audio_feat(gather_audio_window(features, i)).numpy()
+        #     for i in range(start, start + count)
+        # ])
+        return FeatherTalkFeatures(features, count)
 
     def extract_features(self, audio_chunk: AudioChunk) -> FeatherTalkFeatures:
         if self._hubert is None:
@@ -220,8 +222,9 @@ class FeatherTalkEngine:
         start = int(avatar_state.extra.get("frame_index_start", 0))
         predictions = []
         with torch.inference_mode():
-            for i, audio in enumerate(features.vector):
-                index = _frame_index(start + i, len(avatar_state.frame_paths))
+            # for i, audio in enumerate(features.vector):
+            for frame_index in range(len(features.vector)):
+                index = _frame_index(start + frame_index, len(avatar_state.frame_paths))
                 path = avatar_state.frame_paths[index]
                 image = self._read_frame(avatar_state, index)
                 landmark_path = avatar_state.landmark_dir / f"{path.stem}.lms"
@@ -234,6 +237,11 @@ class FeatherTalkEngine:
                 model_input = torch.cat([
                     hwc_to_chw_tensor(inner), hwc_to_chw_tensor(mask_mouth(inner.copy())),
                 ], dim=0).unsqueeze(0).to(self._device)
+
+                audio = reshape_audio_feat(
+                    gather_audio_window(features, frame_index, half_window=avatar_state.model.audio_half_window),
+                    raw_hubert=avatar_state.model.raw_hubert_audio,
+                ).unsqueeze(0).to(self._device)
                 prediction = avatar_state.model(
                     model_input,
                     torch.from_numpy(audio).unsqueeze(0).to(self._device),
