@@ -170,7 +170,7 @@ class FeatherTalkEngine:
         """
         pcm = self._pcm(audio_chunk)
         count = (len(pcm) + 639) // 640
-        return self._features(pcm, avatar_state.hubert, 0, count)
+        return self._features(pcm, self._hubert, 0, count)
 
     def extract_features_for_stream1(self, audio_chunk: AudioChunk, avatar_state: FeatherTalkState) -> FeatherTalkFeatures:
         pcm = self._pcm(audio_chunk)
@@ -239,12 +239,13 @@ class FeatherTalkEngine:
                 ], dim=0).unsqueeze(0).to(self._device)
 
                 audio = reshape_audio_feat(
-                    gather_audio_window(features, frame_index, half_window=avatar_state.model.audio_half_window),
+                    gather_audio_window(features.vector, frame_index, half_window=avatar_state.model.audio_half_window),
                     raw_hubert=avatar_state.model.raw_hubert_audio,
                 ).unsqueeze(0).to(self._device)
                 prediction = avatar_state.model(
                     model_input,
-                    torch.from_numpy(audio).unsqueeze(0).to(self._device),
+                    audio
+                    # torch.from_numpy(audio).unsqueeze(0).to(self._device),
                 )[0]
                 prediction = (prediction.cpu().numpy().transpose(1, 2, 0) * 255).clip(0, 255).astype(np.uint8)
                 crop[FACE_BORDER:FACE_BORDER + FACE_INNER_SIZE,
