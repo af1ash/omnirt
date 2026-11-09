@@ -220,7 +220,7 @@ class FeatherTalkEngine:
         )
 
         start = int(avatar_state.extra.get("frame_index_start", 0))
-        predictions = []
+        # predictions = []
         with torch.inference_mode():
             # for i, audio in enumerate(features.vector):
             for frame_index in range(len(features.vector)):
@@ -251,8 +251,9 @@ class FeatherTalkEngine:
                 crop[FACE_BORDER:FACE_BORDER + FACE_INNER_SIZE,
                      FACE_BORDER:FACE_BORDER + FACE_INNER_SIZE] = prediction
                 image[y1:y2, x1:x2] = cv2.resize(crop, (x2 - x1, y2 - y1))
-                predictions.append(image)
-        return predictions
+                yield image
+        # #         predictions.append(image)
+        # # return predictions
 
     def compose_frame(self, avatar_state: FeatherTalkState, frame_idx: int, prediction: Any) -> VideoFrameData:
         if prediction is None:

@@ -88,7 +88,8 @@ class FeatherTalkRealtimeRuntime:
             pcm = np.frombuffer(pcm_s16le, dtype='<i2').copy()
             features = engine.extract_features_for_stream(AudioChunk(pcm, 16000, len(pcm) / 16), state)
             frames = engine.infer(features, state)
-            state.extra['frame_index_start'] = int(state.extra.get('frame_index_start', 0)) + len(frames)
+            frames_counts = len(features.vector)
+            state.extra['frame_index_start'] = int(state.extra.get('frame_index_start', 0)) + frames_counts
             encoded = []
             for frame in frames:
                 ok, jpeg = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
